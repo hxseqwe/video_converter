@@ -16,15 +16,8 @@ class Settings:
     CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
 
     SUPPORTED_INPUT_FORMATS = ['.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv']
-    SUPPORTED_OUTPUT_FORMATS = {
-        'mp4': 'libx264',
-        'avi': 'mpeg4', 
-        'mov': 'libx264',
-        'webm': 'libvpx',
-        'mkv': 'libx264'
-    }
-    
-    # Максимальный размер файла (100MB)
+    SUPPORTED_OUTPUT_FORMATS = ['mp4', 'avi', 'mov', 'webm', 'mkv']
+
     MAX_FILE_SIZE = 100 * 1024 * 1024
 
 settings = Settings()

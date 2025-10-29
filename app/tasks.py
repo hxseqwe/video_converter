@@ -2,63 +2,65 @@ import os
 import ffmpeg
 from celery import Celery
 from pathlib import Path
-from app.config import settings
-from app.utils import generate_output_filename, get_quality_settings
+import time
+import subprocess
 
-celery_app = Celery(
-    'video_converter',
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND
-)
+celery_app = Celery('video_converter')
+celery_app.conf.broker_url = 'redis://localhost:6379/0'
+celery_app.conf.result_backend = 'redis://localhost:6379/0'
 
 @celery_app.task(bind=True)
 def convert_video(self, input_path: str, output_format: str, quality: str = "medium"):
+    """Фоновая задача для конвертации видео"""
     
     try:
         input_filename = Path(input_path).name
-        output_filename = generate_output_filename(input_filename, output_format)
-        output_path = settings.CONVERTED_DIR / output_filename
+        output_filename = f"{Path(input_filename).stem}_converted.{output_format}"
+        output_path = f"static/converted/{output_filename}"
         
-        quality_settings = get_quality_settings(quality)
-        
-        probe = ffmpeg.probe(input_path)
-        video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
-        
-        if not video_stream:
-            raise Exception("Не удалось найти видео поток в файле")
-        
-        output_args = {
-            'format': output_format,
+        quality_settings = {
+            "low": {"video_bitrate": "500k", "audio_bitrate": "64k"},
+            "medium": {"video_bitrate": "1000k", "audio_bitrate": "128k"},
+            "high": {"video_bitrate": "2000k", "audio_bitrate": "192k"},
+            "original": {"video_bitrate": None, "audio_bitrate": None}
         }
         
-        if quality_settings['video_bitrate']:
-            output_args['video_bitrate'] = quality_settings['video_bitrate']
-        if quality_settings['audio_bitrate']:
-            output_args['audio_bitrate'] = quality_settings['audio_bitrate']
+        settings = quality_settings.get(quality, quality_settings["medium"])
         
-        (
-            ffmpeg
-            .input(input_path)
-            .output(str(output_path), **output_args)
-            .overwrite_output()
-            .run_async(pipe_stdout=True, pipe_stderr=True)
-        )
+        cmd = [
+            'ffmpeg',
+            '-i', input_path,
+            '-y'
+        ]
         
-        for i in range(100):
+        if settings['video_bitrate']:
+            cmd.extend(['-b:v', settings['video_bitrate']])
+        if settings['audio_bitrate']:
+            cmd.extend(['-b:a', settings['audio_bitrate']])
+        
+        cmd.append(output_path)
+        
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        for i in range(10):
             self.update_state(
                 state='PROGRESS',
                 meta={
-                    'current': i + 1,
+                    'current': (i + 1) * 10,
                     'total': 100,
-                    'status': f'Конвертация {i+1}%'
+                    'status': f'Конвертация {(i + 1) * 10}%'
                 }
             )
-            import time
-            time.sleep(0.1)
+            time.sleep(1)
+
+        stdout, stderr = process.communicate()
+        
+        if process.returncode != 0:
+            raise Exception(f"FFmpeg error: {stderr.decode()}")
         
         return {
             'status': 'SUCCESS',
-            'output_file': str(output_path),
+            'output_file': output_path,
             'output_filename': output_filename
         }
         

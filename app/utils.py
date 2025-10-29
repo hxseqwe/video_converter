@@ -1,14 +1,10 @@
 import os
-import magic
 from pathlib import Path
 from app.config import settings
 
 def allowed_file(filename: str) -> bool:
     extension = Path(filename).suffix.lower()
     return extension in settings.SUPPORTED_INPUT_FORMATS
-
-def get_file_type(file_path: str) -> str:
-    return magic.from_file(file_path, mime=True)
 
 def generate_output_filename(input_filename: str, output_format: str) -> str:
     stem = Path(input_filename).stem
